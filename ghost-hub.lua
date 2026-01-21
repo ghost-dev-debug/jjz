@@ -1,19 +1,34 @@
+--==================================================
 -- PlaceId Check
+--==================================================
 if game.PlaceId ~= 128451689942376 then return end
 
+--==================================================
 -- Services
+--==================================================
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 
+--==================================================
+-- Quest Services
+--==================================================
+local QuestService = ReplicatedStorage.NetworkComm.QuestService
+local AcceptQuest = QuestService.AcceptQuest_Method
+local QuestFinishedSignal = QuestService.QuestFinished_Signal
+
+--==================================================
 -- Damage Remote
+--==================================================
 local DamageRemote = ReplicatedStorage
     .NetworkComm
     .CombatService
     .DamageCharacter_Method
 
+--==================================================
 -- NPC Path
+--==================================================
 local NPCFolder = ReplicatedStorage
     .Assets
     .Models
@@ -21,38 +36,99 @@ local NPCFolder = ReplicatedStorage
     .Humanoid
     .NPCs
 
+--==================================================
 -- Load Mercury
+--==================================================
 local Mercury = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"
 ))()
 
+--==================================================
 -- GUI
+--==================================================
 local GUI = Mercury:Create{
     Name = "Ghost Hub | [⚡] Jujutsu: Zero",
     Size = UDim2.fromOffset(600, 400),
     Theme = Mercury.Themes.Dark
 }
 
--- ================= VARIABLES =================
-local SelectedNPC = "Bully1"
+--==================================================
+-- Variables
+--==================================================
+local SelectedQuest = "Bully1"
+
+local AutoQuest = false
 local AutoKill = false
 
--- Damage Arg Cache
+-- Quest state
+local QuestCompleted = true
+
+-- Damage cache
 local CachedArgs = nil
 local LastHitTime = 0
 local WaitingForNewHit = true
 
--- ================= TAB =================
+--==================================================
+-- Tab
+--==================================================
 local FarmTab = GUI:Tab{
     Name = "Farm",
     Icon = "rbxassetid://4483345998"
 }
 
+--==================================================
+-- Info Label
+--==================================================
 FarmTab:Label{
-    Text = "Hit NPC once manually to capture damage data"
+    Text = "Hit Bully1 ONCE manually to capture damage data"
 }
 
--- ================= CAPTURE DAMAGE ARGS =================
+--==================================================
+-- Dropdown
+--==================================================
+FarmTab:Dropdown{
+    Name = "Select Quest",
+    StartingText = "Bully1",
+    Items = {"Bully1"},
+    Callback = function(v)
+        SelectedQuest = v
+    end
+}
+
+--==================================================
+-- Quest Finished Listener (STABLE)
+--==================================================
+QuestFinishedSignal.OnClientEvent:Connect(function(questName)
+    if questName == SelectedQuest then
+        QuestCompleted = true
+    end
+end)
+
+--==================================================
+-- Auto Quest (FIXED, NO ABORT)
+--==================================================
+FarmTab:Toggle{
+    Name = "Auto Quest",
+    StartingState = false,
+    Callback = function(v)
+        AutoQuest = v
+        task.spawn(function()
+            while AutoQuest do
+                if QuestCompleted then
+                    QuestCompleted = false
+                    pcall(function()
+                        AcceptQuest:InvokeServer(SelectedQuest)
+                    end)
+                end
+                task.wait(1)
+            end
+        end)
+    end
+}
+
+--==================================================
+-- Capture Damage Args (AUTO REFRESH)
+--==================================================
 local mt = getrawmetatable(game)
 local old = mt.__namecall
 setreadonly(mt, false)
@@ -73,22 +149,24 @@ end)
 
 setreadonly(mt, true)
 
--- ================= AUTO KILL (SERVER + AUTO REFRESH) =================
+--==================================================
+-- Auto Kill (SERVER-SIDE + FAILSAFE)
+--==================================================
 FarmTab:Toggle{
-    Name = "Auto Kill (Server + Auto Refresh)",
+    Name = "Auto Kill (Server Damage)",
     StartingState = false,
     Callback = function(v)
         AutoKill = v
         task.spawn(function()
             while AutoKill do
-                -- If no valid args → wait for manual hit
+                -- No valid args → wait for manual hit
                 if not CachedArgs or WaitingForNewHit then
-                    task.wait(0.5)
+                    task.wait(0.4)
                     continue
                 end
 
                 for _,npc in ipairs(NPCFolder:GetChildren()) do
-                    if npc.Name == SelectedNPC then
+                    if npc.Name == SelectedQuest then
                         local humanoid = npc:FindFirstChildOfClass("Humanoid")
                         if humanoid and humanoid.Health > 0 then
                             local success = pcall(function()
@@ -99,7 +177,6 @@ FarmTab:Toggle{
                                 )
                             end)
 
-                            -- If server rejected → force refresh
                             if not success then
                                 warn("⚠️ Damage failed, waiting for new hit")
                                 WaitingForNewHit = true
@@ -108,7 +185,7 @@ FarmTab:Toggle{
                     end
                 end
 
-                -- If args too old (weapon/skill change safeguard)
+                -- Auto expire protection (weapon / skill change)
                 if tick() - LastHitTime > 20 then
                     warn("🔄 Damage args expired, hit NPC again")
                     WaitingForNewHit = true
