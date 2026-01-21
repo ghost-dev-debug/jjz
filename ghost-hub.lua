@@ -43,7 +43,7 @@ local Mercury = loadstring(game:HttpGet(
 ))()
 
 local GUI = Mercury:Create{
-    Name = "Ghost Hub | [⚡] Jujutsu: Zero",
+    Name = ".Ghost Hub | [⚡] Jujutsu: Zero",
     Size = UDim2.fromOffset(650, 450),
     Theme = Mercury.Themes.Dark
 }
