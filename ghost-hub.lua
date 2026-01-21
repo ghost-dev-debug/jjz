@@ -48,7 +48,7 @@ local Mercury = loadstring(game:HttpGet(
 --==================================================
 local GUI = Mercury:Create{
     Name = "Ghost Hub | [⚡] Jujutsu: Zero",
-    Size = UDim2.fromOffset(600, 400),
+    Size = UDim2.fromOffset(650, 450),
     Theme = Mercury.Themes.Dark
 }
 
@@ -59,8 +59,8 @@ local SelectedQuest = "Bully1"
 
 local AutoQuest = false
 local AutoKill = false
+local AutoRefresh = true -- future use
 
--- Quest state
 local QuestCompleted = true
 
 -- Damage cache
@@ -77,36 +77,23 @@ local FarmTab = GUI:Tab{
 }
 
 --==================================================
--- Info Label
+-- SECTION: QUEST
 --==================================================
-FarmTab:Label{
-    Text = "Hit Bully1 ONCE manually to capture damage data"
-}
+FarmTab:Label{ Text = "🧠 Quest Settings" }
 
---==================================================
--- Dropdown
---==================================================
 FarmTab:Dropdown{
-    Name = "Select Quest",
+    Name = "Select Quest / NPC",
     StartingText = "Bully1",
-    Items = {"Bully1"},
+    Items = {
+        "Bully1"
+        -- "Bully2",
+        -- "Bully3"
+    },
     Callback = function(v)
         SelectedQuest = v
     end
 }
 
---==================================================
--- Quest Finished Listener (STABLE)
---==================================================
-QuestFinishedSignal.OnClientEvent:Connect(function(questName)
-    if questName == SelectedQuest then
-        QuestCompleted = true
-    end
-end)
-
---==================================================
--- Auto Quest (FIXED, NO ABORT)
---==================================================
 FarmTab:Toggle{
     Name = "Auto Quest",
     StartingState = false,
@@ -127,7 +114,74 @@ FarmTab:Toggle{
 }
 
 --==================================================
--- Capture Damage Args (AUTO REFRESH)
+-- Quest Finish Listener
+--==================================================
+QuestFinishedSignal.OnClientEvent:Connect(function(questName)
+    if questName == SelectedQuest then
+        QuestCompleted = true
+    end
+end)
+
+--==================================================
+-- SECTION: COMBAT
+--==================================================
+FarmTab:Label{ Text = "⚔️ Combat / Kill Settings" }
+
+FarmTab:Toggle{
+    Name = "Auto Kill (Server Damage)",
+    StartingState = false,
+    Callback = function(v)
+        AutoKill = v
+        task.spawn(function()
+            while AutoKill do
+                if not CachedArgs or WaitingForNewHit then
+                    task.wait(0.4)
+                    continue
+                end
+
+                for _,npc in ipairs(NPCFolder:GetChildren()) do
+                    if npc.Name == SelectedQuest then
+                        local humanoid = npc:FindFirstChildOfClass("Humanoid")
+                        if humanoid and humanoid.Health > 0 then
+                            local success = pcall(function()
+                                DamageRemote:InvokeServer(
+                                    CachedArgs[1],
+                                    CachedArgs[2],
+                                    CachedArgs[3]
+                                )
+                            end)
+
+                            if not success then
+                                WaitingForNewHit = true
+                            end
+                        end
+                    end
+                end
+
+                if tick() - LastHitTime > 20 then
+                    WaitingForNewHit = true
+                end
+
+                task.wait(0.25)
+            end
+        end)
+    end
+}
+
+FarmTab:Toggle{
+    Name = "Auto Refresh Damage (recommended)",
+    StartingState = true,
+    Callback = function(v)
+        AutoRefresh = v
+    end
+}
+
+FarmTab:Label{
+    Text = "ℹ️ Hit NPC ONCE manually to capture damage data"
+}
+
+--==================================================
+-- Damage Arg Capture
 --==================================================
 local mt = getrawmetatable(game)
 local old = mt.__namecall
@@ -148,51 +202,3 @@ mt.__namecall = newcclosure(function(self, ...)
 end)
 
 setreadonly(mt, true)
-
---==================================================
--- Auto Kill (SERVER-SIDE + FAILSAFE)
---==================================================
-FarmTab:Toggle{
-    Name = "Auto Kill (Server Damage)",
-    StartingState = false,
-    Callback = function(v)
-        AutoKill = v
-        task.spawn(function()
-            while AutoKill do
-                -- No valid args → wait for manual hit
-                if not CachedArgs or WaitingForNewHit then
-                    task.wait(0.4)
-                    continue
-                end
-
-                for _,npc in ipairs(NPCFolder:GetChildren()) do
-                    if npc.Name == SelectedQuest then
-                        local humanoid = npc:FindFirstChildOfClass("Humanoid")
-                        if humanoid and humanoid.Health > 0 then
-                            local success = pcall(function()
-                                DamageRemote:InvokeServer(
-                                    CachedArgs[1],
-                                    CachedArgs[2],
-                                    CachedArgs[3]
-                                )
-                            end)
-
-                            if not success then
-                                warn("⚠️ Damage failed, waiting for new hit")
-                                WaitingForNewHit = true
-                            end
-                        end
-                    end
-                end
-
-                -- Auto expire protection (weapon / skill change)
-                if tick() - LastHitTime > 20 then
-                    warn("🔄 Damage args expired, hit NPC again")
-                    WaitingForNewHit = true
-                end
-
-                task.wait(0.25)
-            end
-        end)
-    end
-}
