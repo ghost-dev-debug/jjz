@@ -1,159 +1,69 @@
---==================================================
--- PlaceId Check
---==================================================
-if game.PlaceId ~= 128451689942376 then return end
+--// PlaceId Check
+if game.PlaceId ~= 123821081589134 then return end
 
---==================================================
--- Services
---==================================================
+--// Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalPlayer = Players.LocalPlayer
+local Player = Players.LocalPlayer
 
---==================================================
--- Remotes
---==================================================
-local QuestService = ReplicatedStorage.NetworkComm.QuestService
-local AcceptQuest = QuestService.AcceptQuest_Method
-local QuestFinishedSignal = QuestService.QuestFinished_Signal
-
-local DamageRemote = ReplicatedStorage
-    .NetworkComm
-    .CombatService
-    .DamageCharacter_Method
-
---==================================================
--- NPC Folder
---==================================================
-local NPCFolder = ReplicatedStorage
-    .Assets
-    .Models
-    .Characters
-    .Humanoid
-    .NPCs
-
---==================================================
--- Mercury GUI
---==================================================
+--// Mercury GUI
 local Mercury = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"
 ))()
 
 local GUI = Mercury:Create{
-    Name = "Ghost Hub | [⚡] Jujutsu: Zero",
-    Size = UDim2.fromOffset(650, 450),
+    Name = "Ghost Hub | Auto Break",
+    Size = UDim2.fromOffset(600, 400),
     Theme = Mercury.Themes.Dark
 }
 
---==================================================
--- Variables
---==================================================
-local SelectedQuest = "Bully1"
-local AutoQuest = false
-local AutoKill = false
-local QuestReady = true
-
--- Damage Cache
-local CachedArgs = nil
-
---==================================================
--- Hook Damage (CAPTURE REAL SERVER ARGS)
---==================================================
-local mt = getrawmetatable(game)
-setreadonly(mt,false)
-
-local old = mt.__namecall
-mt.__namecall = newcclosure(function(self,...)
-    local args = {...}
-    local method = getnamecallmethod()
-
-    if method == "InvokeServer"
-       and self == DamageRemote
-       and not CachedArgs then
-
-        CachedArgs = args
-        warn("✅ Damage Args gecached – AutoKill bereit")
-    end
-
-    return old(self,...)
-end)
-
-setreadonly(mt,true)
-
---==================================================
--- GUI TAB
---==================================================
 local FarmTab = GUI:Tab{
-    Name = "Farm",
+    Name = "Auto Farm",
     Icon = "rbxassetid://4483345998"
 }
 
-FarmTab:Dropdown{
-    Name = "Select Quest",
-    StartingText = "Bully1",
-    Items = {"Bully1"},
-    Callback = function(v)
-        SelectedQuest = v
+--// Break Remote
+local BreakEvent = ReplicatedStorage.Remotes.Break
+
+--// Settings
+local AutoBreak = false
+local LoopDelay = 0.2 -- Default Speed
+
+--// Speed Slider
+FarmTab:Slider{
+    Name = "Break Speed",
+    Default = 20,        -- UI Wert
+    Min = 1,
+    Max = 60,
+    Callback = function(value)
+        -- kleiner Wert = schneller
+        LoopDelay = math.clamp(1 / value, 0.02, 1)
     end
 }
 
---==================================================
--- AUTO QUEST (STABIL)
---==================================================
+--// Auto Break Toggle
 FarmTab:Toggle{
-    Name = "Auto Quest",
+    Name = "Auto Break",
     StartingState = false,
-    Callback = function(v)
-        AutoQuest = v
+    Callback = function(state)
+        AutoBreak = state
         task.spawn(function()
-            while AutoQuest do
-                if QuestReady then
-                    QuestReady = false
-                    pcall(function()
-                        AcceptQuest:InvokeServer(SelectedQuest)
-                    end)
-                end
-                task.wait(1)
-            end
-        end)
-    end
-}
+            while AutoBreak do
+                local char = Player.Character
+                local ragdoll = char
+                    and char:FindFirstChild("Ragdoll")
+                    and char.Ragdoll:FindFirstChild("Default")
 
-QuestFinishedSignal.OnClientEvent:Connect(function(name)
-    if name == SelectedQuest then
-        QuestReady = true
-    end
-end)
-
---==================================================
--- AUTO KILL (AFTER 1 HIT)
---==================================================
-FarmTab:Toggle{
-    Name = "Auto Kill (AFK Server Damage)",
-    StartingState = false,
-    Callback = function(v)
-        AutoKill = v
-        task.spawn(function()
-            while AutoKill do
-                if CachedArgs then
-                    for _,npc in ipairs(NPCFolder:GetChildren()) do
-                        if npc.Name == SelectedQuest then
-                            local hum = npc:FindFirstChildOfClass("Humanoid")
-                            if hum and hum.Health > 0 then
-                                -- Reuse REAL server-validated args
-                                CachedArgs[1].Target = hum
-                                pcall(function()
-                                    DamageRemote:InvokeServer(
-                                        CachedArgs[1],
-                                        CachedArgs[2],
-                                        CachedArgs[3]
-                                    )
-                                end)
-                            end
-                        end
-                    end
+                if ragdoll then
+                    firesignal(BreakEvent.OnClientEvent, ragdoll.Head, "Head", 1, 8, false, false)
+                    firesignal(BreakEvent.OnClientEvent, ragdoll["Left Arm"], "Left Arm", 1, 3, false, false)
+                    firesignal(BreakEvent.OnClientEvent, ragdoll["Right Arm"], "Right Arm", 1, 3, false, false)
+                    firesignal(BreakEvent.OnClientEvent, ragdoll.Torso, "Torso", 1, 5, false, false)
+                    firesignal(BreakEvent.OnClientEvent, ragdoll["Right Leg"], "Right Leg", 1, 3, false, false)
+                    firesignal(BreakEvent.OnClientEvent, ragdoll["Left Leg"], "Left Leg", 1, 3, false, false)
                 end
-                task.wait(0.25)
+
+                task.wait(LoopDelay)
             end
         end)
     end
